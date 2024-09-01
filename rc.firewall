@@ -1,0 +1,86 @@
+#!/bin/bash
+
+# Flash previous previous rules and delete custom chains
+iptables -F
+iptables -X
+
+# Set policies - Initialize
+iptables -P INPUT DROP
+iptables -P OUTPUT ACCEPT
+iptables -P FORWARD DROP
+
+# Set new chains
+iptables -N chain_outgoing
+iptables -N chain_est
+
+# Allow outgoing ICMP packets
+iptables -A OUTPUT -p icmp -j ACCEPT
+
+# Protect from incoming ICMP-flood
+iptables -A INPUT -p icmp -m limit --limit 1/m --limit-burst 10 -j ACCEPT
+iptables -A INPUT -p icmp -m limit --limit 1/m --limit-burst 10 -j LOG --log-prefix "itpables[ICMP-flood]: " --log-level 7
+iptables -A INPUT -p icmp -j DROP
+
+# Incoming/outgoing packets
+iptables -A INPUT -j chain_est
+iptables -A OUTPUT -j chain_est
+
+# Allow established connections
+iptables -A chain_est -p tcp -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A chain_est -p udp -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A chain_est -j RETURN
+
+# Protect from incoming SYN-flood
+iptables -A INPUT -i eth0 -p tcp --syn -m limit --limit 2/s --limit-burst 3 -j ACCEPT
+iptables -A INPUT -i eth0 -p tcp --syn -m limit --limit 2/s --limit-burst 3 -j LOG --log-prefix "iptables[SYN-flood]: " --log-level 7
+iptables -A INPUT -i eth0 -p tcp --syn -j DROP
+
+# Allow SMTP access
+iptables -A OUTPUT -p tcp -m multiport --destination-port 25,465,587 -j ACCEPT
+iptables -A INPUT -p tcp -m multiport --source-port 25,465,587 -j ACCEPT
+
+# Accept everything on loopback
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A OUTPUT -o lo -j ACCEPT
+
+# Reject packets claiming to be from my loopback address.
+iptables -A INPUT ! -i lo -s 127.0.0.1 -j REJECT
+
+# Reject packets claiming to be from my own IP
+iptables -A INPUT -i eth0 -s 192.168.56.1 -j REJECT
+
+# Reject packets claiming to be from any class C private network
+iptables -A INPUT -i eth0 -s 192.168.0.0/16 -j REJECT
+
+# Accept outgoing traffic
+iptables -A OUTPUT -j chain_outgoing
+
+# Allow outgoing traffic to google.com and euc.ac.cy
+iptables -A chain_outgoing -p tcp --dport 53 -j ACCEPT
+iptables -A chain_outgoing -p udp --dport 53 -j ACCEPT
+iptables -A chain_outgoing -d 172.217.0.0/16 -p tcp -m multiport --destination-port 80,443 -j ACCEPT
+iptables -A chain_outgoing -d 199.36.153.8/30 -p tcp -m multiport --destination-port 80,443 -j ACCEPT
+iptables -A chain_outgoing -d 199.36.153.4/30 -p tcp -m multiport --destination-port 80,443 -j ACCEPT
+iptables -A chain_outgoing -d 52.32.0.0/11 -p tcp -m multiport --destination-port 80,443 -j ACCEPT
+iptables -A chain_outgoing -d 52.48.0.0/14 -p tcp -m multiport --destination-port 80,443 -j ACCEPT
+iptables -A chain_outgoing -d 52.84.0.0/15 -p tcp -m multiport --destination-port 80,443 -j ACCEPT
+iptables -A chain_outgoing -d 52.0.0.0/11 -p tcp -m multiport --destination-port 80,443 -j ACCEPT
+iptables -A chain_outgoing -d 172.64.0.0/13 -p tcp -m multiport --destination-port 80,443 -j ACCEPT
+iptables -A chain_outgoing -d 212.205.0.0/16 -p tcp -m multiport --destination-port 80,443 -j ACCEPT
+iptables -A chain_outgoing -d 104.16.0.0/12 -p tcp -m multiport --destination-port 80,443 -j ACCEPT
+iptables -A chain_outgoing -d 44.224.0.0/11 -p tcp -m multiport --destination-port 80,443 -j ACCEPT
+iptables -A chain_outgoing -d 216.58.192.0/19 -p tcp -m multiport --destination-port 80,443 -j ACCEPT
+iptables -A chain_outgoing -d 93.184.220.0/22 -p tcp -m multiport --destination-port 80,443 -j ACCEPT
+iptables -A chain_outgoing -d 142.250.0.0/15 -p tcp -m multiport --destination-port 80,443 -j ACCEPT
+
+# Log unauthorized access to webpages
+iptables -A chain_outgoing -p tcp -j LOG --log-prefix "UNAUTHORIZED TCP:"
+iptables -A chain_outgoing -p udp -j LOG --log-prefix "UNAUTHORIZED UDP:"
+iptables -A chain_outgoing -j DROP
+
+# Drop all other
+iptables -P INPUT DROP
+iptables -P OUTPUT DROP
+iptables -P FORWARD DROP
+
+iptables -L
